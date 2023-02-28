@@ -18,6 +18,8 @@ void ResponseInfo::setContentLength(std::string & buffer) {
     if (boost::regex_search(headers, what, re)) {
       // get the string after "Content-Length: "
       content_length = std::stoi(what[1].str());
+      std::cout << "===" << content_length << "====" << std::endl;
+      std::cout << buffer.substr(end + 4).size() << std::endl;
     }
     else {
       isBadGateway = true;
@@ -171,7 +173,8 @@ void ResponseInfo::setCacheControl(std::string & buffer) {
       // use Boost to find if the header contains "max-age=seconds"
       re = boost::regex("max-age=(\\d+)");
       if (boost::regex_search(cache_control, what, re)) {
-        maxAge = std::stoi(what[1].str());
+        maxAge = 50;
+        //std::stoi(what[1].str());
         TimeMake t;
         expirationTime = t.getTime(maxAge);
       }
@@ -222,51 +225,20 @@ void ResponseInfo::printCacheFields() {
  * by no more than the specified number of seconds.
 */
 void ResponseInfo::setFreshLifeTime(int maxStale) {
-  std::string buffer = response;
   TimeMake t;
-  std::string date = "";
-  std::size_t end = buffer.find("\r\n\r\n");
-  if (end != std::string::npos) {
-    content = buffer.substr(end + 4);
-
-    std::string headers = buffer.substr(0, end);
-    boost::regex d("Date:\\s*([^\r\n]*)");
-    boost::smatch whatd;
-    if (boost::regex_search(headers, whatd, d)) {
-      // get the string after "Cache-Control: "
-      std::string date = t.convertGMT(whatd[1].str());
-    }
-
-    // use Boost to find if the header contains "Cache-Control: "
-    boost::regex re("Cache-Control:\\s*(\\S+)");
-    boost::smatch what;
-    if (boost::regex_search(headers, what, re)) {
-      // get the string after "Cache-Control: "
-      std::string cache_control = what[1].str();
-
-      // use Boost to find if the header contains "s-maxage=seconds"
-      re = boost::regex("s-maxage=(\\d+)");
-      if (boost::regex_search(cache_control, what, re)) {
-        freshLifeTime = std::stoi(what[1].str());
-        return;
-      }
-
-      // use Boost to find if the header contains "max-age=seconds"
-      re = boost::regex("max-age=(\\d+)");
-      if (boost::regex_search(cache_control, what, re)) {
-        freshLifeTime = std::stoi(what[1].str());
-        return;
-      }
-
-      // use Boost to find if the header contains "Expires: "
-      re = boost::regex("Expires:\\s*([^\r\n]*)");
-      if (boost::regex_search(headers, what, re)) {
-        std::string exp = t.convertGMT(what[1].str());
-        freshLifeTime = t.timeMinus(exp, date);
-        return;
-      }
-    }
+  if (smaxAge != -1) {
+    freshLifeTime = smaxAge;
   }
+  else if (maxAge != -1) {
+    freshLifeTime = maxAge;
+  }
+  else if (expirationTime != "") {
+    freshLifeTime = t.timeMinus(expirationTime, date);
+  }
+  else {
+    freshLifeTime = 0;
+  }
+  std::cout << freshLifeTime << std::endl;
 }
 
 /**
@@ -321,13 +293,13 @@ bool ResponseInfo::isCacheable(int thread_id) {
   }
   if (expirationTime != "") {
     std::string msg =
-        std::to_string(thread_id) + ": cached, expires at " + expirationTime;
+        std::to_string(thread_id) + ": cacheable, expires at " + expirationTime;
     log.log(msg);
     return true;
   }
   if (maxAge != -1) {
     std::string msg =
-        std::to_string(thread_id) + ": cached, expires at " + t.getTime(maxAge);
+        std::to_string(thread_id) + ": cacheable, expires at " + t.getTime(maxAge);
     log.log(msg);
     return true;
   }

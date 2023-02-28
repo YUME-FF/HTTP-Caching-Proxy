@@ -407,6 +407,8 @@ void Proxy::handleRequest(int thread_id) {
           // check fresh
           std::string response_time = currTime.getTime();
           if (cache.get(request_info.url).isFresh(response_time)) {  //use cache
+            msg = std::to_string(thread_id) + ": in cache, valid";
+            logFile.log(msg);
             cache.useCache(request_info, client_fd, thread_id);
           }
           else {
