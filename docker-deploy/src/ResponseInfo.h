@@ -78,6 +78,32 @@ class ResponseInfo {
       currAge(-1),
       isBadGateway(false){};
 
+    ResponseInfo(ResponseInfo & response) :
+      content(response.content),
+      status_code(response.status_code),
+      re_direct_url(response.re_direct_url),
+      response(response.response),
+      request_time(response.request_time),
+      maxAge(response.maxAge),
+      expirationTime(response.expirationTime),
+      lastModified(response.lastModified),
+      eTag(response.eTag),
+      smaxAge(response.smaxAge),
+      mustRevalidate(response.mustRevalidate),
+      noCache(response.noCache),
+      noStore(response.noStore),
+      isPublic(response.isPublic),
+      isPrivate(response.isPrivate),
+      maxStale(response.maxStale),
+      date(response.date),
+      cache_status(response.cache_status),
+      freshLifeTime(response.freshLifeTime),
+      currAge(response.currAge),
+      isBadGateway(response.isBadGateway),
+      is_chunk(response.is_chunk),
+      content_length(response.content_length),
+      content_type(response.content_type){};
+
   void parseResponse(std::string & buffer, std::string requestTime) {
     request_time = requestTime;
     setContentLength(buffer);

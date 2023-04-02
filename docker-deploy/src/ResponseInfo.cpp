@@ -266,33 +266,33 @@ void ResponseInfo::setCurrentAge(std::string response_time) {
 }
 
 bool ResponseInfo::isCacheable(int thread_id) {
-  Logger log;
+  //Logger log;
   TimeMake t;
   if (noCache) {
     std::string msg = std::to_string(thread_id) + ": not cacheable because no-cache.";
-    log.log(msg);
+     Logger::getInstance().log(msg);
     return false;
   }
   if (noStore) {
     std::string msg = std::to_string(thread_id) + ": not cacheable because no-store.";
-    log.log(msg);
+     Logger::getInstance().log(msg);
     return false;
   }
   if (isPrivate) {
     std::string msg = std::to_string(thread_id) + ": not cacheable because is private.";
-    log.log(msg);
+     Logger::getInstance().log(msg);
     return false;
   }
   if (expirationTime != "") {
     std::string msg =
         std::to_string(thread_id) + ": cacheable, expires at " + expirationTime;
-    log.log(msg);
+     Logger::getInstance().log(msg);
     return true;
   }
   if (maxAge != -1) {
     std::string msg =
         std::to_string(thread_id) + ": cacheable, expires at " + t.getTime(maxAge);
-    log.log(msg);
+     Logger::getInstance().log(msg);
     return true;
   }
   if (isPublic) {
@@ -302,37 +302,38 @@ bool ResponseInfo::isCacheable(int thread_id) {
 }
 
 void ResponseInfo::logCat(int thread_id) {
-  Logger log;
+  //Logger log;
   if (maxAge != -1) {
     std::string msg = std::to_string(thread_id) +
                       ": NOTE Cache-Control: max-age=" + std::to_string(maxAge);
-    log.log(msg);
+    //log.log(msg);
+    Logger::getInstance().log(msg);
   }
   if (expirationTime != "") {
     std::string msg = std::to_string(thread_id) + ": NOTE Expires: " + expirationTime;
-    log.log(msg);
+     Logger::getInstance().log(msg);
   }
   if (noCache) {
     std::string msg = std::to_string(thread_id) + ": NOTE Cache-Control:  no-cache";
-    log.log(msg);
+     Logger::getInstance().log(msg);
   }
   if (eTag != "") {
     std::string msg = std::to_string(thread_id) + ": NOTE ETag: " + eTag;
-    log.log(msg);
+     Logger::getInstance().log(msg);
   }
   if (lastModified != "") {
     std::string msg = std::to_string(thread_id) + ": NOTE Last-Modified: " + lastModified;
-    log.log(msg);
+     Logger::getInstance().log(msg);
   }
 }
 
 bool ResponseInfo::checkBadGateway(int client_fd, int thread_id) {
-  Logger logFile;
+  //Logger logFile;
   if (isBadGateway || response.find("\r\n\r\n") == std::string::npos) {
     std::string badGateway = "HTTP/1.1 502 Bad Gateway";
     std::string msg =
         std::to_string(thread_id) + ": Responding \"HTTP/1.1 502 Bad Gateway\"";
-    logFile.log(msg);
+    Logger::getInstance().log(msg);
     int status = send(client_fd, badGateway.c_str(), strlen(badGateway.c_str()), 0);
     if (status == -1) {
       return false;

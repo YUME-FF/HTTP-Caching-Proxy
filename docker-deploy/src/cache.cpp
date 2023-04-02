@@ -1,4 +1,5 @@
 #include "cache.h"
+#include "helper.h"
 
 Cache::Cache(int maxEntries) {
   this->maxEntries = maxEntries;
@@ -135,11 +136,11 @@ void Cache::printCache() {
 }
 
 void Cache::useCache(httpcommand req, int client_fd, int thread_id) {
-  Logger logFile;
+  //Logger logFile;
   std::lock_guard<std::mutex> lock(cacheMutex);
   char res[get(req.url).response.size()];
   strcpy(res, get(req.url).response.c_str());
   send(client_fd, res, get(req.url).response.size(), 0);
   std::string msg = std::to_string(thread_id) + ": Responding \"" + req.url + "\"";
-  logFile.log(msg);
+  Logger::getInstance().log(msg);
 }

@@ -11,7 +11,7 @@
 
 class Cache {
  private:
-  std::map<std::string, ResponseInfo> cache;  // stores cached response for each URL
+  std::map<std::string, ResponseInfo> cache;  // stores cached response for each URL， key is URL
   int maxEntries;  // maximum number of entries allowed in the cache
   std::mutex cacheMutex;
   void cleanup();  // helper function to remove expired entries from the cache

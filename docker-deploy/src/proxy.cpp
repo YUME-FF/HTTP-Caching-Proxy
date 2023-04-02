@@ -6,7 +6,7 @@
 #include "httpcommand.h"
 #include "myexception.h"
 
-Logger logFile;
+//Logger logFile;
 Cache cache(10 * 1024 * 1024);
 
 /**
@@ -26,7 +26,7 @@ void Proxy::initListenfd(const char *port) {
     status = getaddrinfo(NULL, port, &host_info, &host_info_list);
 
     if (status != 0) {
-        std::string msg = "Error: cannot get address info for host\n";
+        std::string msg = "Init Error: cannot get address info for host\n";
         msg = msg + "  (" + "" + "," + port + ")";
         throw myException(msg);
     }
@@ -104,7 +104,7 @@ int Proxy::build_connection(const char *host, const char *port) {
  * accept connection on socket, using IPv4 only
  * @param ip
  */
-void Proxy::acceptConnection(std::string &ip) {
+std::pair<std::string, int> Proxy::acceptConnection(std::string &ip) {
     struct sockaddr_storage socket_addr;
     char str[INET_ADDRSTRLEN];
     socklen_t socket_addr_len = sizeof(socket_addr);
@@ -123,6 +123,10 @@ void Proxy::acceptConnection(std::string &ip) {
               INET_ADDRSTRLEN);
     ip = str;
     client_ip = ip;
+    int connection_fd = client_connection_fd;
+    return make_pair(ip, connection_fd);
+
+    // std::cout << "testtest" << std::endl;
 }
 
 /**
@@ -147,21 +151,22 @@ int Proxy::getPort() {
  * @param client_fd client's socket fd
  * @param thread_id thread's id
  */
-void Proxy::requestCONNECT(int client_fd, int thread_id) {
+void Proxy::requestCONNECT(int client_fd, int thread_id, int connection_fd) {
     std::string msg = "HTTP/1.1 200 OK\r\n\r\n";
-    int status = send(client_connection_fd, msg.c_str(), strlen(msg.c_str()), 0);
+    int status = send(connection_fd, msg.c_str(), strlen(msg.c_str()), 0);
     if (status == -1) {
         msg = "Error(Connection): message buffer being sent is broken";
         throw myException(msg);
     }
     msg = std::to_string(thread_id) + ": Responding \"HTTP/1.1 200 OK\"";
-    logFile.log(msg);
+    //Logger *logFile = Logger::getInstance();
+    Logger::getInstance().log(msg);
     fd_set read_fds;
-    int maxfd = client_fd > client_connection_fd ? client_fd : client_connection_fd;
+    int maxfd = client_fd > connection_fd ? client_fd : connection_fd;
     while (true) {
         FD_ZERO(&read_fds);
         FD_SET(client_fd, &read_fds);
-        FD_SET(client_connection_fd, &read_fds);
+        FD_SET(connection_fd, &read_fds);
 
         struct timeval time;
         time.tv_sec = 0;
@@ -172,20 +177,21 @@ void Proxy::requestCONNECT(int client_fd, int thread_id) {
             msg = "Error(Connection): select() failed";
             throw myException(msg);
         }
-        if (FD_ISSET(client_connection_fd, &read_fds)) {
-            if (!connect_Transferdata(client_connection_fd, client_fd)) {
+        if (FD_ISSET(connection_fd, &read_fds)) {
+            if (!connect_Transferdata(connection_fd, client_fd)) {
                 break;
             }
         } else if (FD_ISSET(client_fd, &read_fds)) {
-            if (!connect_Transferdata(client_fd, client_connection_fd)) {
+            if (!connect_Transferdata(client_fd, connection_fd)) {
                 break;
             }
         }
     }
     msg = std::to_string(thread_id) + ": Tunnel closed";
-    logFile.log(msg);
+    //Logger* logFile = Logger::getInstance();
+    Logger::getInstance().log(msg);
     close(client_fd);
-    close(client_connection_fd);
+    close(connection_fd);
     return;
 }
 
@@ -225,10 +231,11 @@ bool Proxy::connect_Transferdata(int fd1, int fd2) {
  * @param request the request info sent by browser
  * @param thread_id
  */
-void Proxy::requestGET(int client_fd, httpcommand request, int thread_id) {
+void Proxy::requestGET(int client_fd, int connection_fd, httpcommand request, int thread_id) {
     std::string msg = std::to_string(thread_id) + ": Requesting \"" + request.method + " " +
                       request.url + "\" from " + request.host;
-    logFile.log(msg);
+    //Logger* logFile = Logger::getInstance();
+    Logger::getInstance().log(msg);
     //  more secure way to send data
     const char *data = request.request.c_str();
     int request_len = request.request.size();
@@ -258,17 +265,18 @@ void Proxy::requestGET(int client_fd, httpcommand request, int thread_id) {
     size_t pos = response_info.response.find_first_of("\r\n");
     std::string tolog = response_info.response.substr(0, pos);
     msg = std::to_string(thread_id) + ": Received \"" + tolog + "\" from " + request.host;
-    logFile.log(msg);
+    //Logger* logFile = Logger::getInstance();
+    Logger::getInstance().log(msg);
     response_info.logCat(thread_id);  // print NOTE: ....
     std::string response_line = buffer_str.substr(0, buffer_str.find_first_of("\r\n"));
     msg = std::to_string(thread_id) + ": Responding \"" + response_line + "\"";
-    logFile.log(msg);
+    Logger::getInstance().log(msg);
     if (response_info.isCacheable(thread_id)) {
         cache.put(request.url, response_info);
     }
     if (response_info.is_chunk) {
-        send(client_connection_fd, buffer, recv_first, 0);
-        sendChunkPacket(client_fd, client_connection_fd);
+        send(connection_fd, buffer, recv_first, 0);
+        sendChunkPacket(client_fd, connection_fd);
     } else {
         size_t header_end = buffer_str.find("\r\n\r\n");
         int header_len = header_end + 4;
@@ -280,11 +288,11 @@ void Proxy::requestGET(int client_fd, httpcommand request, int thread_id) {
             recv_left -= len;
         }
         bool isBad = response_info.checkBadGateway(client_fd, thread_id);
-        send(client_connection_fd, buffer, recv_first + recv_len, 0);
+        send(connection_fd, buffer, recv_first + recv_len, 0);
     }
 
     close(client_fd);
-    close(client_connection_fd);
+    close(connection_fd);
 }
 
 /**
@@ -311,10 +319,11 @@ void Proxy::sendChunkPacket(int client_fd, int client_connection_fd) {
  * @param request_info -- httpcommand object storing the request information
  * @param thread_id -- the thread id of a thread
  */
-void Proxy::requestPOST(int client_fd, httpcommand request_info, int thread_id) {
+void Proxy::requestPOST(int client_fd, int connection_fd, httpcommand request_info, int thread_id) {
     std::string msg = std::to_string(thread_id) + ": Requesting \"" + request_info.method +
                       " " + request_info.url + "\" from " + request_info.host;
-    logFile.log(msg);
+    //Logger* logFile = ;
+    Logger::getInstance().log(msg);
     const char *data = request_info.request.c_str();
     int request_len = request_info.request.size();
     int total_sent = 0;
@@ -342,7 +351,7 @@ void Proxy::requestPOST(int client_fd, httpcommand request_info, int thread_id) 
         // perror("recv"); // **** not necessarily an error, it's due to server side connection closed ****
         return;  // **** should be using return instead of exit ****
     }
-    //recv_len += n;
+    // recv_len += n;
     std::string buffer_str(buffer);
     TimeMake t;
 
@@ -351,7 +360,8 @@ void Proxy::requestPOST(int client_fd, httpcommand request_info, int thread_id) 
     std::string tolog = response_info.response.substr(0, pos);
     msg = std::to_string(thread_id) + ": Received \"" + tolog + "\" from " +
           request_info.host;
-    logFile.log(msg);
+    //Logger* logFile = Logger::getInstance();
+    Logger::getInstance().log(msg);
     int i = 0;
 
     size_t header_end = buffer_str.find("\r\n\r\n");
@@ -363,19 +373,19 @@ void Proxy::requestPOST(int client_fd, httpcommand request_info, int thread_id) 
         recv_len += len;
         recv_left -= len;
     }
-    send(client_connection_fd, buffer, n + recv_len, 0);
+    send(connection_fd, buffer, n + recv_len, 0);
 
     // std::cout << "****************" << std::endl;
     // std::cout << buffer << std::endl;
 
     close(client_fd);
-    close(client_connection_fd);
+    close(connection_fd);
 }
 
-void Proxy::handleRequest(int thread_id) {
+void Proxy::handleRequest(std::string c_ip, int connection_fd, int thread_id) {
     std::vector<char> buffer(MAX_LENGTH, 0);
     int idx = 0;
-    int len_recv = recv(client_connection_fd, &(buffer.data()[idx]), MAX_LENGTH, 0);
+    int len_recv = recv(connection_fd, &(buffer.data()[idx]), MAX_LENGTH, 0);
     std::cout << "=============Request:=============" << std::endl;
     std::cout << buffer.data() << std::endl;
 
@@ -383,16 +393,17 @@ void Proxy::handleRequest(int thread_id) {
     httpcommand request_info(client_request_str);
     // std::cout << request_info.method << std::endl;
 
-    if (!request_info.checkBadRequest(client_connection_fd, thread_id)) {
-        close(client_connection_fd);
+    if (!request_info.checkBadRequest(connection_fd, thread_id)) {
+        close(connection_fd);
         return;
     }
 
     TimeMake currTime;
     std::string request_time = currTime.getTime();
     std::string msg = std::to_string(thread_id) + ": \"" + request_info.method + " " +
-                      request_info.url + "\" from " + client_ip + " @ " + request_time;
-    logFile.log(msg);
+                      request_info.url + "\" from " + c_ip + " @ " + request_time;
+    //Logger* logFile = Logger::getInstance();
+    Logger::getInstance().log(msg);
 
     try {
         // build connection with remote server
@@ -401,18 +412,20 @@ void Proxy::handleRequest(int thread_id) {
         if (request_info.method == "CONNECT") {
             msg = std::to_string(thread_id) + ": Requesting \"" + request_info.method + " " +
                   request_info.url + "\" from " + request_info.host;
-            logFile.log(msg);
-            requestCONNECT(client_fd, thread_id);
+            //Logger* logFile = Logger::getInstance();
+            Logger::getInstance().log(msg);
+            requestCONNECT(client_fd, thread_id, connection_fd);
             msg = std::to_string(thread_id) + ": Tunnel closed";
-            logFile.log(msg);
+            Logger::getInstance().log(msg);
         } else if (request_info.method == "GET") {
             if (!cache.has(request_info.url)) {  // not in cache
                 msg = std::to_string(thread_id) + ": not in cache";
-                logFile.log(msg);
-                requestGET(client_fd, request_info, thread_id);
-            } else {                                        // find in cache
+                //Logger* logFile = Logger::getInstance();
+                Logger::getInstance().log(msg);
+                requestGET(client_fd, connection_fd, request_info, thread_id);
+            } else {       // the page is found in cache
                 if (cache.get(request_info.url).noCache) {  // has no-cache
-                    // check validation
+                    // check validation 
                     if (!cache.validate(request_info.url, client_request_str)) {
                         std::string req_msg_str = client_request_str;
                         char req_new_msg[req_msg_str.size() + 1];
@@ -422,13 +435,18 @@ void Proxy::handleRequest(int thread_id) {
                         std::string checknew(new_resp, new_len);
                         if (checknew.find("HTTP/1.1 200 OK") != std::string::npos) {
                             msg = std::to_string(thread_id) + ": cached, but requires re-validation";
-                            logFile.log(msg);
+                            //Logger* logFile = Logger::getInstance();
+                            Logger::getInstance().log(msg);
                         }
-                        requestGET(client_fd, request_info, thread_id);
+                        requestGET(client_fd, connection_fd, request_info, thread_id);
                     } else {  // use cache
                         msg = std::to_string(thread_id) + ": in cache, valid";
-                        logFile.log(msg);
-                        cache.useCache(request_info, client_fd, thread_id);
+                        //Logger* logFile = Logger::getInstance();
+                        Logger::getInstance().log(msg);
+
+                        //revise：应该是发回给浏览器 03/30/2023
+                        cache.useCache(request_info, connection_fd, thread_id);
+                        //cache.useCache(request_info, client_fd, thread_id);
                     }
                 } else {
                     // check fresh
@@ -436,19 +454,23 @@ void Proxy::handleRequest(int thread_id) {
                     if (cache.get(request_info.url)
                             .isFresh(response_time, request_info.maxStale)) {  // use cache
                         msg = std::to_string(thread_id) + ": in cache, valid";
-                        logFile.log(msg);
-                        cache.useCache(request_info, client_fd, thread_id);
+                        //Logger* logFile = Logger::getInstance();
+                        Logger::getInstance().log(msg);
+                        //revise：应该是发回给浏览器 03/30/2023
+                        cache.useCache(request_info, connection_fd, thread_id);
+                        //cache.useCache(request_info, client_fd, thread_id);
                     } else {
                         msg = std::to_string(thread_id) + ": cached, expires at " +
                               currTime.getTime(cache.get(request_info.url).freshLifeTime);
-                        logFile.log(msg);
-                        requestGET(client_fd, request_info, thread_id);
+                        //Logger* logFile = Logger::getInstance();
+                        Logger::getInstance().log(msg);
+                        requestGET(client_fd, connection_fd, request_info, thread_id);
                     }
                     cache.printCache();
                 }
             }
         } else if (request_info.method == "POST") {
-            requestPOST(client_fd, request_info, thread_id);
+            requestPOST(client_fd, connection_fd, request_info, thread_id);
         }
     } catch (std::exception &e) {
         std::cout << e.what() << std::endl;
@@ -462,10 +484,15 @@ void Proxy::handleRequest(int thread_id) {
  */
 void Proxy::run(int thread_id) {
     try {
-        handleRequest(thread_id);
+        //handleRequest(thread_id);
     } catch (std::exception &e) {
         std::cout << e.what() << std::endl;
         return;
     }
     return;
+}
+
+void Proxy::startThread(int thread_id) {
+    std::thread th(&Proxy::run, this, thread_id);  // 创建线程并调用Proxy类的run成员函数
+    th.detach();                                   // 分离线程
 }

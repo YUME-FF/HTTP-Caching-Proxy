@@ -111,12 +111,12 @@ void httpcommand::parseMaxStale() {
 }
 
 bool httpcommand::checkBadRequest(int client_fd, int thread_id) {
-  Logger logFile;
+  //Logger logFile;
   if (isBadRequest || (method != "CONNECT" && method != "POST" && method != "GET")) {
     std::string badRequest = "HTTP/1.1 400 Bad Request\r\n\r\n";
     std::string msg =
         std::to_string(thread_id) + ": Responding \"HTTP/1.1 400 Bad Request\"";
-    logFile.log(msg);
+    Logger::getInstance().log(msg);
     int status = send(client_fd, badRequest.c_str(), strlen(badRequest.c_str()), 0);
     if (status == -1) {
       return false;
